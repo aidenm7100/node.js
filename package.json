@@ -1,9 +1,9 @@
 {
   "name": "roblox-proxy",
   "version": "1.0.0",
-  "main": "index.js",
+  "main": "node.js",
   "scripts": {
-    "start": "node index.js"
+    "start": "node node.js"
   },
   "dependencies": {
     "express": "^4.18.2",
