@@ -6,15 +6,12 @@ app.use(express.json());
 
 const PORT = process.env.PORT || 10000;
 
-// 🔐 ENV VARIABLES (Render / Railway)
+// 🔐 ENVIRONMENT VARIABLES (Render / Railway)
 const API_KEY = process.env.API_KEY;
 const GROUP_ID = 12747590;
 
 // 🔐 must match Roblox script
 const SECRET = "my_super_secret_key";
-
-// Discord webhook (optional safe logging)
-const webhookUrl = "https://discord.com/api/webhooks/1487956895154180137/xqNQxj7dr7phIw2VskHrLRcVl9ymvxWvk43FZemUlINhnH-bpgRX0IUzFncFq6W3ThX3";
 
 console.log("API KEY LOADED:", !!API_KEY);
 
@@ -26,30 +23,65 @@ app.post("/rank", async (req, res) => {
 
     // 🔒 security check
     if (secret !== SECRET) {
-        console.log("❌ Unauthorized request");
-
-        return res.json({
-            success: false,
-            error: "unauthorized"
-        });
+        return res.json({ success: false, error: "unauthorized" });
     }
 
     if (!userId || !roleId) {
-        return res.json({
-            success: false,
-            error: "missing userId or roleId"
-        });
+        return res.json({ success: false, error: "missing_data" });
     }
 
-    let success = false;
-
     try {
-        console.log(`Ranking user ${userId} -> role ${roleId}`);
+        // ==============================
+        // 1️⃣ GET MEMBERSHIP ID
+        // ==============================
+        console.log("Fetching membership...");
 
-        // ✅ FIXED OPEN CLOUD ENDPOINT
+        const membershipRes = await axios.get(
+            `https://apis.roblox.com/cloud/v2/groups/${GROUP_ID}/memberships`,
+            {
+                params: { userId },
+                headers: {
+                    "x-api-key": API_KEY
+                }
+            }
+        );
+
+        const membershipId = membershipRes.data?.memberships?.[0]?.id;
+
+        if (!membershipId) {
+            console.log("❌ No membership found");
+            return res.json({ success: false, error: "no_membership" });
+        }
+
+        console.log("Membership ID:", membershipId);
+
+        // ==============================
+        // 2️⃣ OPTIONAL: UNASSIGN OLD ROLE (SAFE CLEANUP)
+        // ==============================
+        try {
+            await axios.post(
+                `https://apis.roblox.com/cloud/v2/groups/${GROUP_ID}/memberships/${membershipId}:unassignRole`,
+                {},
+                {
+                    headers: {
+                        "x-api-key": API_KEY
+                    }
+                }
+            );
+
+            console.log("Old role unassigned (if existed)");
+        } catch (err) {
+            console.log("Unassign skipped (non-fatal)");
+        }
+
+        // ==============================
+        // 3️⃣ ASSIGN NEW ROLE
+        // ==============================
         const response = await axios.post(
-            `https://apis.roblox.com/cloud/v2/groups/${GROUP_ID}/roles/${roleId}/users/${userId}`,
-            {},
+            `https://apis.roblox.com/cloud/v2/groups/${GROUP_ID}/memberships/${membershipId}:assignRole`,
+            {
+                roleId: roleId
+            },
             {
                 headers: {
                     "x-api-key": API_KEY,
@@ -58,35 +90,34 @@ app.post("/rank", async (req, res) => {
             }
         );
 
-        console.log("✅ Open Cloud Success");
+        console.log("✅ Role assigned successfully");
         console.log(response.data);
 
-        success = true;
+        // ==============================
+        // 4️⃣ RESPONSE TO ROBLOX
+        // ==============================
+        return res.json({
+            success: true
+        });
 
     } catch (err) {
-        console.log("❌ Rank failed:");
-        console.log(err.response?.data || err.message);
-    }
+        console.log("❌ ERROR OCCURRED");
+        console.log("Status:", err.response?.status);
+        console.log("Data:", err.response?.data);
+        console.log("Message:", err.message);
 
-    // 🔥 ALWAYS RESPOND TO ROBLOX (NEVER 500)
-    res.json({
-        success: success
-    });
-
-    // 🔥 SAFE WEBHOOK (won’t break ranking)
-    if (webhookUrl) {
-        try {
-            await axios.post(webhookUrl, {
-                content: success
-                    ? `✅ Ranked user ${userId} to role ${roleId}`
-                    : `❌ Failed to rank user ${userId}`
-            });
-        } catch (err) {
-            console.log("Webhook error:", err.message);
-        }
+        // IMPORTANT: always return 200-style JSON (avoid Roblox HTTP 500 confusion)
+        return res.json({
+            success: false,
+            error: "rank_failed",
+            details: err.response?.data || err.message
+        });
     }
 });
 
+// ==============================
+// START SERVER
+// ==============================
 app.listen(PORT, () => {
     console.log(`Server running on port ${PORT}`);
 });
