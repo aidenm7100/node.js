@@ -31,10 +31,8 @@ app.post("/rank", async (req, res) => {
 
     try {
         // ==============================
-        // 1️⃣ GET ALL MEMBERSHIPS
+        // 1️⃣ GET MEMBERSHIPS
         // ==============================
-        console.log("Fetching memberships...");
-
         const membershipRes = await axios.get(
             `https://apis.roblox.com/cloud/v2/groups/${GROUP_ID}/memberships`,
             {
@@ -44,31 +42,34 @@ app.post("/rank", async (req, res) => {
             }
         );
 
-        const memberships = membershipRes.data?.memberships || [];
+        const memberships = membershipRes.data.groupMemberships || [];
 
         console.log("Total memberships:", memberships.length);
 
         // ==============================
-        // 2️⃣ FIND USER MEMBERSHIP
+        // 2️⃣ FIND USER (IMPORTANT FIX)
         // ==============================
-        const membership = memberships.find(m => {
-            return (
-                m.profile?.userId === userId ||
-                m.userId === userId
-            );
-        });
+        const membership = memberships.find(m =>
+            m.user === `users/${userId}`
+        );
 
         if (!membership) {
-            console.log("❌ No membership found for user");
+            console.log("❌ No membership found");
             return res.json({ success: false, error: "no_membership" });
         }
 
-        const membershipId = membership.name.split("/").pop();
+        // ==============================
+        // 3️⃣ EXTRACT MEMBERSHIP ID
+        // ==============================
+        const membershipId = membership.path.split("/").pop();
 
+        console.log("Membership found:");
+        console.log("User:", membership.user);
+        console.log("Role:", membership.role);
         console.log("Membership ID:", membershipId);
 
         // ==============================
-        // 3️⃣ OPTIONAL UNASSIGN OLD ROLE
+        // 4️⃣ OPTIONAL: UNASSIGN OLD ROLE
         // ==============================
         try {
             await axios.post(
@@ -82,12 +83,12 @@ app.post("/rank", async (req, res) => {
             );
 
             console.log("Old role unassigned");
-        } catch (err) {
-            console.log("Unassign skipped (not required)");
+        } catch (e) {
+            console.log("Unassign skipped (not critical)");
         }
 
         // ==============================
-        // 4️⃣ ASSIGN NEW ROLE
+        // 5️⃣ ASSIGN NEW ROLE
         // ==============================
         await axios.post(
             `https://apis.roblox.com/cloud/v2/groups/${GROUP_ID}/memberships/${membershipId}:assignRole`,
@@ -105,7 +106,7 @@ app.post("/rank", async (req, res) => {
         console.log("✅ Role assigned successfully");
 
         // ==============================
-        // 5️⃣ RESPONSE
+        // 6️⃣ RESPONSE BACK TO ROBLOX
         // ==============================
         return res.json({
             success: true
