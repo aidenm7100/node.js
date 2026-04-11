@@ -1,5 +1,6 @@
 const express = require("express");
 const axios = require("axios");
+const fs = require("fs");
 
 const app = express();
 app.use(express.json());
@@ -8,93 +9,109 @@ const PORT = process.env.PORT || 10000;
 
 const API_KEY = process.env.API_KEY;
 const GROUP_ID = 12747590;
-
-// must match Roblox script
 const SECRET = "my_super_secret_key";
 
-console.log("API KEY LOADED:", !!API_KEY);
+const CACHE_FILE = "./memberships.json";
 
+// ==========================
+// 🔥 LOAD CACHE FROM FILE
+// ==========================
+function loadCache() {
+    try {
+        if (fs.existsSync(CACHE_FILE)) {
+            return JSON.parse(fs.readFileSync(CACHE_FILE, "utf8"));
+        }
+    } catch (e) {
+        console.log("Cache load failed");
+    }
+    return [];
+}
+
+// ==========================
+// 💾 SAVE CACHE
+// ==========================
+function saveCache(data) {
+    fs.writeFileSync(CACHE_FILE, JSON.stringify(data, null, 2));
+}
+
+// ==========================
+// 🚀 FETCH ALL MEMBERSHIPS (PAGINATED)
+// ==========================
+async function fetchAllMemberships() {
+    let all = [];
+    let pageToken = null;
+
+    while (true) {
+        const res = await axios.get(
+            `https://apis.roblox.com/cloud/v2/groups/${GROUP_ID}/memberships`,
+            {
+                headers: { "x-api-key": API_KEY },
+                params: pageToken ? { pageToken } : {}
+            }
+        );
+
+        const data = res.data;
+
+        all.push(...(data.groupMemberships || []));
+
+        pageToken = data.nextPageToken;
+
+        if (!pageToken) break;
+    }
+
+    return all;
+}
+
+// ==========================
+// 🔄 REFRESH CACHE ON START
+// ==========================
+let membershipCache = loadCache();
+
+async function refreshCache() {
+    console.log("Refreshing membership cache...");
+
+    membershipCache = await fetchAllMemberships();
+
+    saveCache(membershipCache);
+
+    console.log("Cache updated:", membershipCache.length, "members");
+}
+
+// run once at startup
+refreshCache();
+
+// optional refresh every 10 minutes
+setInterval(refreshCache, 10 * 60 * 1000);
+
+// ==========================
+// 🚀 RANK ENDPOINT
+// ==========================
 app.post("/rank", async (req, res) => {
     const { userId, roleId, secret } = req.body;
 
-    console.log("=== Incoming Request ===");
-    console.log(req.body);
-
-    // 🔐 security check
     if (secret !== SECRET) {
         return res.json({ success: false, error: "unauthorized" });
     }
 
-    if (!userId || !roleId) {
-        return res.json({ success: false, error: "missing_data" });
-    }
-
     try {
-        // ==============================
-        // 1️⃣ GET MEMBERSHIPS
-        // ==============================
-        const membershipRes = await axios.get(
-            `https://apis.roblox.com/cloud/v2/groups/${GROUP_ID}/memberships`,
-            {
-                headers: {
-                    "x-api-key": API_KEY
-                }
-            }
-        );
+        console.log("Using cached memberships...");
 
-        const memberships = membershipRes.data.groupMemberships || [];
-
-        console.log("Total memberships:", memberships.length);
-
-        // ==============================
-        // 2️⃣ FIND USER (IMPORTANT FIX)
-        // ==============================
-        const membership = memberships.find(m =>
+        const membership = membershipCache.find(m =>
             m.user === `users/${userId}`
         );
 
         if (!membership) {
-            console.log("❌ No membership found");
             return res.json({ success: false, error: "no_membership" });
         }
 
-        // ==============================
-        // 3️⃣ EXTRACT MEMBERSHIP ID
-        // ==============================
         const membershipId = membership.path.split("/").pop();
 
-        console.log("Membership found:");
-        console.log("User:", membership.user);
-        console.log("Role:", membership.role);
-        console.log("Membership ID:", membershipId);
+        console.log("Membership found:", membershipId);
 
-        // ==============================
-        // 4️⃣ OPTIONAL: UNASSIGN OLD ROLE
-        // ==============================
-        try {
-            await axios.post(
-                `https://apis.roblox.com/cloud/v2/groups/${GROUP_ID}/memberships/${membershipId}:unassignRole`,
-                {},
-                {
-                    headers: {
-                        "x-api-key": API_KEY
-                    }
-                }
-            );
-
-            console.log("Old role unassigned");
-        } catch (e) {
-            console.log("Unassign skipped (not critical)");
-        }
-
-        // ==============================
-        // 5️⃣ ASSIGN NEW ROLE
-        // ==============================
+        // assign role
         await axios.post(
             `https://apis.roblox.com/cloud/v2/groups/${GROUP_ID}/memberships/${membershipId}:assignRole`,
-            {
-                roleId: roleId
-            },
+            { roleId },
             {
                 headers: {
                     "x-api-key": API_KEY,
@@ -103,20 +120,10 @@ app.post("/rank", async (req, res) => {
             }
         );
 
-        console.log("✅ Role assigned successfully");
-
-        // ==============================
-        // 6️⃣ RESPONSE BACK TO ROBLOX
-        // ==============================
-        return res.json({
-            success: true
-        });
+        return res.json({ success: true });
 
     } catch (err) {
-        console.log("❌ ERROR:");
-        console.log("Status:", err.response?.status);
-        console.log("Data:", err.response?.data);
-        console.log("Message:", err.message);
+        console.log("ERROR:", err.response?.data || err.message);
 
         return res.json({
             success: false,
@@ -125,6 +132,9 @@ app.post("/rank", async (req, res) => {
     }
 });
 
+// ==========================
+// START SERVER
+// ==========================
 app.listen(PORT, () => {
     console.log(`Server running on port ${PORT}`);
 });
