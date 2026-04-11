@@ -5,52 +5,107 @@ const fs = require("fs");
 const app = express();
 app.use(express.json());
 
-const PORT = process.env.PORT || 10000;
+const PORT = process.env.PORT || 3000;
 
 const API_KEY = process.env.API_KEY;
 const GROUP_ID = 12747590;
-
 const SECRET = "my_super_secret_key";
 
 console.log("API KEY LOADED:", !!API_KEY);
 
+// ===============================
+// 🔄 LOAD / SAVE CACHE
+// ===============================
+const CACHE_FILE = "./memberships.json";
+
+function loadCache() {
+    try {
+        if (fs.existsSync(CACHE_FILE)) {
+            return JSON.parse(fs.readFileSync(CACHE_FILE, "utf8"));
+        }
+    } catch (e) {}
+    return [];
+}
+
+function saveCache(data) {
+    fs.writeFileSync(CACHE_FILE, JSON.stringify(data, null, 2));
+}
+
+// ===============================
+// 📥 FETCH ALL MEMBERSHIPS (PAGINATION SAFE)
+// ===============================
+async function fetchAllMemberships() {
+    let all = [];
+    let pageToken = null;
+
+    while (true) {
+        const res = await axios.get(
+            `https://apis.roblox.com/cloud/v2/groups/${GROUP_ID}/memberships`,
+            {
+                headers: { "x-api-key": API_KEY },
+                params: pageToken ? { pageToken } : {}
+            }
+        );
+
+        const data = res.data;
+
+        all.push(...(data.groupMemberships || []));
+
+        pageToken = data.nextPageToken;
+
+        if (!pageToken) break;
+    }
+
+    return all;
+}
+
+// ===============================
+// 🚀 CACHE ON START
+// ===============================
+let membershipCache = loadCache();
+
+async function refreshCache() {
+    console.log("Refreshing membership cache...");
+    membershipCache = await fetchAllMemberships();
+    saveCache(membershipCache);
+    console.log("Cache loaded:", membershipCache.length);
+}
+
+refreshCache();
+setInterval(refreshCache, 10 * 60 * 1000);
+
+// ===============================
+// 🚀 RANK ENDPOINT
+// ===============================
 app.post("/rank", async (req, res) => {
     const { userId, roleId, secret } = req.body;
+
+    console.log("Incoming request:", req.body);
 
     if (secret !== SECRET) {
         return res.json({ success: false, error: "unauthorized" });
     }
 
     try {
-        // ==========================
-        // GET MEMBERSHIPS (cached or live)
-        // ==========================
-        const membershipRes = await axios.get(
-            `https://apis.roblox.com/cloud/v2/groups/${GROUP_ID}/memberships`,
-            {
-                headers: {
-                    "x-api-key": API_KEY
-                }
-            }
-        );
-
-        const memberships = membershipRes.data.groupMemberships || [];
-
-        const membership = memberships.find(m =>
+        // ===============================
+        // 🔍 FIND USER IN CACHE
+        // ===============================
+        const membership = membershipCache.find(m =>
             m.user === `users/${userId}`
         );
 
         if (!membership) {
+            console.log("❌ No membership found for:", userId);
             return res.json({ success: false, error: "no_membership" });
         }
 
         const membershipId = membership.path.split("/").pop();
 
-        console.log("Membership ID:", membershipId);
+        console.log("✅ Membership found:", membershipId);
 
-        // ==========================
-        // 🔥 CORRECT ROLE UPDATE METHOD
-        // ==========================
+        // ===============================
+        // 🟢 UPDATE ROLE (CORRECT METHOD)
+        // ===============================
         await axios.patch(
             `https://apis.roblox.com/cloud/v2/groups/${GROUP_ID}/memberships/${membershipId}`,
             {
@@ -64,12 +119,12 @@ app.post("/rank", async (req, res) => {
             }
         );
 
-        console.log("✅ Role updated successfully");
+        console.log("✅ Role updated");
 
         return res.json({ success: true });
 
     } catch (err) {
-        console.log("ERROR:");
+        console.log("❌ ERROR:");
         console.log(err.response?.data || err.message);
 
         return res.json({
@@ -79,6 +134,9 @@ app.post("/rank", async (req, res) => {
     }
 });
 
+// ===============================
+// START SERVER
+// ===============================
 app.listen(PORT, () => {
     console.log(`Server running on port ${PORT}`);
 });
