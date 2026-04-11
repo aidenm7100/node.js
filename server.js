@@ -6,6 +6,7 @@ app.use(express.json());
 
 const PORT = process.env.PORT || 3000;
 
+// 🔐 ENV VARIABLES (Railway / Render)
 const API_KEY = process.env.API_KEY;
 const GROUP_ID = 12747590;
 
@@ -33,9 +34,12 @@ app.post("/rank", async (req, res) => {
     try {
         console.log(`Ranking user ${userId} -> role ${roleId}`);
 
-        const response = await axios.post(
-            `https://apis.roblox.com/cloud/v2/groups/${GROUP_ID}/roles/${roleId}/users/${userId}`,
-            {},
+        // ✅ CORRECT OPEN CLOUD ENDPOINT (THIS FIXES YOUR 404)
+        const response = await axios.patch(
+            `https://apis.roblox.com/cloud/v2/groups/${GROUP_ID}/memberships/${userId}`,
+            {
+                roleId: roleId
+            },
             {
                 headers: {
                     "x-api-key": API_KEY,
@@ -44,9 +48,12 @@ app.post("/rank", async (req, res) => {
             }
         );
 
-        console.log("✅ SUCCESS:", response.data);
+        console.log("✅ SUCCESS:");
+        console.log(response.data);
 
-        return res.json({ success: true });
+        return res.json({
+            success: true
+        });
 
     } catch (err) {
         console.log("❌ ERROR:");
