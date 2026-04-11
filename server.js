@@ -9,11 +9,12 @@ const PORT = process.env.PORT || 3000;
 const API_KEY = "API_KEY";
 const GROUP_ID = 12747590;
 
-// 🔐 simple security check (must match Roblox script)
+// 🔐 must match Roblox script
 const SECRET = "my_super_secret_key";
 
 app.post("/rank", async (req, res) => {
-    console.log("Incoming request:", req.body);
+    console.log("=== Incoming Request ===");
+    console.log(req.body);
 
     const { userId, roleId, secret } = req.body;
 
@@ -28,10 +29,15 @@ app.post("/rank", async (req, res) => {
     }
 
     try {
-        // 🚀 CORRECT OPEN CLOUD ENDPOINT
+        console.log(`Ranking user ${userId} -> role ${roleId}`);
+
+        // ✅ CORRECT OPEN CLOUD REQUEST
         const response = await axios.post(
-            `https://apis.roblox.com/cloud/v2/groups/${GROUP_ID}/roles/${roleId}/users/${userId}`,
-            {},
+            `https://apis.roblox.com/cloud/v2/groups/${GROUP_ID}/memberships`,
+            {
+                userId: userId,
+                roleId: roleId
+            },
             {
                 headers: {
                     "x-api-key": API_KEY,
@@ -40,7 +46,8 @@ app.post("/rank", async (req, res) => {
             }
         );
 
-        console.log("✅ Rank success:", response.data);
+        console.log("✅ Open Cloud Success:");
+        console.log(response.data);
 
         return res.json({
             success: true,
@@ -48,12 +55,16 @@ app.post("/rank", async (req, res) => {
         });
 
     } catch (err) {
-        console.log("❌ Rank failed:");
-        console.log(err.response?.data || err.message);
+        console.log("❌ Open Cloud FAILED:");
+
+        // 🔥 FULL ERROR DEBUG (VERY IMPORTANT)
+        console.log("Status:", err.response?.status);
+        console.log("Data:", err.response?.data);
+        console.log("Message:", err.message);
 
         return res.status(500).json({
-            error: "rank_failed",
-            details: err.response?.data || err.message
+            success: false,
+            error: err.response?.data || err.message
         });
     }
 });
