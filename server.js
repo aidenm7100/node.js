@@ -14,7 +14,7 @@ const GROUP_ID = 12747590;
 const SECRET = "my_super_secret_key";
 
 // Discord webhook (optional safe logging)
-const webhookUrl = "YOUR_DISCORD_WEBHOOK";
+const webhookUrl = "https://discord.com/api/webhooks/1487956895154180137/xqNQxj7dr7phIw2VskHrLRcVl9ymvxWvk43FZemUlINhnH-bpgRX0IUzFncFq6W3ThX3";
 
 console.log("API KEY LOADED:", !!API_KEY);
 
