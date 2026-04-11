@@ -6,22 +6,21 @@ app.use(express.json());
 
 const PORT = process.env.PORT || 10000;
 
-// 🔐 ENVIRONMENT VARIABLES (Render / Railway)
 const API_KEY = process.env.API_KEY;
 const GROUP_ID = 12747590;
 
-// 🔐 must match Roblox script
+// must match Roblox script
 const SECRET = "my_super_secret_key";
 
 console.log("API KEY LOADED:", !!API_KEY);
 
 app.post("/rank", async (req, res) => {
+    const { userId, roleId, secret } = req.body;
+
     console.log("=== Incoming Request ===");
     console.log(req.body);
 
-    const { userId, roleId, secret } = req.body;
-
-    // 🔒 security check
+    // 🔐 security check
     if (secret !== SECRET) {
         return res.json({ success: false, error: "unauthorized" });
     }
@@ -32,31 +31,44 @@ app.post("/rank", async (req, res) => {
 
     try {
         // ==============================
-        // 1️⃣ GET MEMBERSHIP ID
+        // 1️⃣ GET ALL MEMBERSHIPS
         // ==============================
-        console.log("Fetching membership...");
+        console.log("Fetching memberships...");
 
         const membershipRes = await axios.get(
             `https://apis.roblox.com/cloud/v2/groups/${GROUP_ID}/memberships`,
             {
-                params: { userId },
                 headers: {
                     "x-api-key": API_KEY
                 }
             }
         );
 
-        const membershipId = membershipRes.data?.memberships?.[0]?.id;
+        const memberships = membershipRes.data?.memberships || [];
 
-        if (!membershipId) {
-            console.log("❌ No membership found");
+        console.log("Total memberships:", memberships.length);
+
+        // ==============================
+        // 2️⃣ FIND USER MEMBERSHIP
+        // ==============================
+        const membership = memberships.find(m => {
+            return (
+                m.profile?.userId === userId ||
+                m.userId === userId
+            );
+        });
+
+        if (!membership) {
+            console.log("❌ No membership found for user");
             return res.json({ success: false, error: "no_membership" });
         }
+
+        const membershipId = membership.name.split("/").pop();
 
         console.log("Membership ID:", membershipId);
 
         // ==============================
-        // 2️⃣ OPTIONAL: UNASSIGN OLD ROLE (SAFE CLEANUP)
+        // 3️⃣ OPTIONAL UNASSIGN OLD ROLE
         // ==============================
         try {
             await axios.post(
@@ -69,15 +81,15 @@ app.post("/rank", async (req, res) => {
                 }
             );
 
-            console.log("Old role unassigned (if existed)");
+            console.log("Old role unassigned");
         } catch (err) {
-            console.log("Unassign skipped (non-fatal)");
+            console.log("Unassign skipped (not required)");
         }
 
         // ==============================
-        // 3️⃣ ASSIGN NEW ROLE
+        // 4️⃣ ASSIGN NEW ROLE
         // ==============================
-        const response = await axios.post(
+        await axios.post(
             `https://apis.roblox.com/cloud/v2/groups/${GROUP_ID}/memberships/${membershipId}:assignRole`,
             {
                 roleId: roleId
@@ -91,33 +103,27 @@ app.post("/rank", async (req, res) => {
         );
 
         console.log("✅ Role assigned successfully");
-        console.log(response.data);
 
         // ==============================
-        // 4️⃣ RESPONSE TO ROBLOX
+        // 5️⃣ RESPONSE
         // ==============================
         return res.json({
             success: true
         });
 
     } catch (err) {
-        console.log("❌ ERROR OCCURRED");
+        console.log("❌ ERROR:");
         console.log("Status:", err.response?.status);
         console.log("Data:", err.response?.data);
         console.log("Message:", err.message);
 
-        // IMPORTANT: always return 200-style JSON (avoid Roblox HTTP 500 confusion)
         return res.json({
             success: false,
-            error: "rank_failed",
-            details: err.response?.data || err.message
+            error: "rank_failed"
         });
     }
 });
 
-// ==============================
-// START SERVER
-// ==============================
 app.listen(PORT, () => {
     console.log(`Server running on port ${PORT}`);
 });
