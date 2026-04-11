@@ -14,10 +14,15 @@ const SECRET = "my_super_secret_key";
 console.log("API KEY LOADED:", !!API_KEY);
 
 // ===============================
-// 🔄 LOAD / SAVE CACHE
+// 💾 CACHE FILE
 // ===============================
 const CACHE_FILE = "./memberships.json";
 
+let membershipCache = [];
+
+// ===============================
+// 📥 LOAD CACHE FROM FILE
+// ===============================
 function loadCache() {
     try {
         if (fs.existsSync(CACHE_FILE)) {
@@ -27,12 +32,15 @@ function loadCache() {
     return [];
 }
 
+// ===============================
+// 💾 SAVE CACHE
+// ===============================
 function saveCache(data) {
     fs.writeFileSync(CACHE_FILE, JSON.stringify(data, null, 2));
 }
 
 // ===============================
-// 📥 FETCH ALL MEMBERSHIPS (PAGINATION SAFE)
+// 🚀 FETCH ALL MEMBERSHIPS (PAGINATION SAFE)
 // ===============================
 async function fetchAllMemberships() {
     let all = [];
@@ -60,19 +68,50 @@ async function fetchAllMemberships() {
 }
 
 // ===============================
-// 🚀 CACHE ON START
+// 🔄 REFRESH CACHE
 // ===============================
-let membershipCache = loadCache();
-
 async function refreshCache() {
     console.log("Refreshing membership cache...");
-    membershipCache = await fetchAllMemberships();
-    saveCache(membershipCache);
-    console.log("Cache loaded:", membershipCache.length);
+
+    try {
+        membershipCache = await fetchAllMemberships();
+        saveCache(membershipCache);
+        console.log("Cache loaded:", membershipCache.length);
+    } catch (err) {
+        console.log("Cache refresh failed:", err.message);
+    }
 }
 
+// ===============================
+// 🚀 STARTUP CACHE LOAD
+// ===============================
+membershipCache = loadCache();
 refreshCache();
-setInterval(refreshCache, 10 * 60 * 1000);
+
+// refresh every 2 minutes (safe balance)
+setInterval(refreshCache, 2 * 60 * 1000);
+
+// ===============================
+// 🧠 FIND USER (WITH AUTO REFRESH FALLBACK)
+// ===============================
+async function findMembership(userId) {
+    let membership = membershipCache.find(
+        m => m.user === `users/${userId}`
+    );
+
+    // 🔥 if not found → refresh ONCE and retry
+    if (!membership) {
+        console.log("Not found in cache → refreshing...");
+
+        await refreshCache();
+
+        membership = membershipCache.find(
+            m => m.user === `users/${userId}`
+        );
+    }
+
+    return membership;
+}
 
 // ===============================
 // 🚀 RANK ENDPOINT
@@ -88,14 +127,12 @@ app.post("/rank", async (req, res) => {
 
     try {
         // ===============================
-        // 🔍 FIND USER IN CACHE
+        // 🔍 FIND MEMBERSHIP
         // ===============================
-        const membership = membershipCache.find(m =>
-            m.user === `users/${userId}`
-        );
+        const membership = await findMembership(userId);
 
         if (!membership) {
-            console.log("❌ No membership found for:", userId);
+            console.log("❌ No membership found");
             return res.json({ success: false, error: "no_membership" });
         }
 
