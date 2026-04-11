@@ -6,11 +6,13 @@ app.use(express.json());
 
 const PORT = process.env.PORT || 3000;
 
-const API_KEY = "API_KEY";
+const API_KEY = process.env.API_KEY;
 const GROUP_ID = 12747590;
 
 // 🔐 must match Roblox script
 const SECRET = "my_super_secret_key";
+
+console.log("API KEY LOADED:", !!API_KEY);
 
 app.post("/rank", async (req, res) => {
     console.log("=== Incoming Request ===");
@@ -31,13 +33,9 @@ app.post("/rank", async (req, res) => {
     try {
         console.log(`Ranking user ${userId} -> role ${roleId}`);
 
-        // ✅ CORRECT OPEN CLOUD REQUEST
         const response = await axios.post(
-            `https://apis.roblox.com/cloud/v2/groups/${GROUP_ID}/memberships`,
-            {
-                userId: userId,
-                roleId: roleId
-            },
+            `https://apis.roblox.com/cloud/v2/groups/${GROUP_ID}/roles/${roleId}/users/${userId}`,
+            {},
             {
                 headers: {
                     "x-api-key": API_KEY,
@@ -46,18 +44,12 @@ app.post("/rank", async (req, res) => {
             }
         );
 
-        console.log("✅ Open Cloud Success:");
-        console.log(response.data);
+        console.log("✅ SUCCESS:", response.data);
 
-        return res.json({
-            success: true,
-            message: "Player ranked successfully"
-        });
+        return res.json({ success: true });
 
     } catch (err) {
-        console.log("❌ Open Cloud FAILED:");
-
-        // 🔥 FULL ERROR DEBUG (VERY IMPORTANT)
+        console.log("❌ ERROR:");
         console.log("Status:", err.response?.status);
         console.log("Data:", err.response?.data);
         console.log("Message:", err.message);
